@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Space Shooting Game</title>
+<style>
+  /* Reset and basic styles */
+  * {
+    box-sizing: border-box;
+  }
+  body {
+    margin: 0;
+    background: radial-gradient(ellipse at center, #000010 0%, #000000 100%);
+    overflow: hidden;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    color: white;
+    user-select: none;
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+  }
+  canvas {
+    display: block;
+    margin: 0 auto;
+    background: linear-gradient(to bottom, #001026, #000000);
+    border: 2px solid #1a1a2e;
+    border-radius: 10px;
+    box-shadow: 0 0 20px #33fefe;
+    max-width: 95vw;
+    max-height: 95vh;
+    width: auto;
+    height: auto;
+  }
+  #score {
+    position: fixed;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 28px;
+    font-weight: bold;
+    text-shadow: 0 0 6px #33fefe;
+    z-index: 100;
+  }
+  #gameOver {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 48px;
+    color: #ff004d;
+    text-shadow: 0 0 10px #ff004d;
+    display: none;
+    z-index: 100;
+  }
+  #restartBtn {
+    position: fixed;
+    top: 60%;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 12px 30px;
+    font-size: 24px;
+    background: #33fefe;
+    color: #000;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    box-shadow: 0 0 10px #33fefe;
+    display: none;
+    transition: all 0.3s ease;
+    z-index: 100;
+  }
+  #restartBtn:hover {
+    background: #11cfcf;
+    transform: translateX(-50%) scale(1.05);
+  }
+</style>
+</head>
+<body>
+<div id="score">Score: 0</div>
+<div id="gameOver">Game Over</div>
+<button id="restartBtn">Restart Game</button>
+<canvas id="gameCanvas" width="800" height="600"></canvas>
+<script>
+  (() => {
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+
+    const scoreElement = document.getElementById('score');
+    const gameOverElement = document.getElementById('gameOver');
+    const restartBtn = document.getElementById('restartBtn');
+
+    const WIDTH = canvas.width;
+    const HEIGHT = canvas.height;
+
+    // Game state
+    let spaceship;
+    let bullets = [];
+    let enemies = [];
+    let keys = {};
+    let score = 0;
+    let gameRunning = false;
+    let enemySpawnTimer = 0;
+    let enemySpawnInterval = 1000; // ms
+
+    // Spaceship class
+    class Spaceship {
+      constructor() {
+        this.width = 40;
+        this.height = 60;
+        this.x = WIDTH / 2 - this.width / 2;
+        this.y = HEIGHT - this.height - 20;
+        this.speed = 6;
+        this.color = '#33fefe';
+      }
+
+      draw() {
+        ctx.save();
+        // Draw spaceship shape
+        ctx.fillStyle = this.color;
+        ctx.beginPath();
+        // Triangle shape representing spaceship
+        ctx.moveTo(this.x + this.width / 2, this.y);
+        ctx.lineTo(this.x + this.width, this.y + this.height);
+        ctx.lineTo(this.x, this.y + this.height);
+        ctx.closePath();
+        ctx.shadowColor = '#33fefe';
+        ctx.shadowBlur = 10;
+        ctx.fill();
+        ctx.restore();
+      }
+
+      update() {
+        if ((keys['ArrowLeft'] || keys['a']) && this.x > 0) {
+          this.x -= this.speed;
+        }
+        if ((keys['ArrowRight'] || keys['d']) && this.x + this.width < WIDTH) {
+          this.x += this.speed;
+        }
+      }
+
+      shoot() {
+        const bulletX = this.x + this.width / 2;
+        const bulletY = this.y;
+        bullets.push(new Bullet(bulletX, bulletY));
+      }
+    }
+
+    // Bullet class
+    class Bullet {
+      constructor(x, y) {
+        this.x = x;
+        this.y = y;
+        this.radius = 5;
+        this.speed = 10;
+        this.color = '#33fefe';
+      }
+
+      draw() {
+        ctx.save();
+        ctx.fillStyle = this.color;
+        ctx.shadowColor = '#33fefe';
+        ctx.shadowBlur = 8;
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+
+      update() {
+        this.y -= this.speed;
+      }
+
+      offscreen() {
+        return this.y + this.radius < 0;
+      }
+    }
+
+    // Enemy class
+    class Enemy {
+      constructor(x, y, speed) {
+        this.width = 40;
+        this.height = 40;
+        this.x = x;
+        this.y = y;
+        this.speed = speed;
+        this.color = '#ff004d';
+        this.direction = 1; // horizontal movement direction
+        this.moveRange = 80; // how far enemy moves sideways
+        this.startX = x;
+      }
+
+      draw() {
+        ctx.save();
+        ctx.fillStyle = this.color;
+        ctx.shadowColor = '#ff004d';
+        ctx.shadowBlur = 10;
+        ctx.beginPath();
+        // Enemy is a simple diamond shape for visual interest
+        ctx.moveTo(this.x + this.width / 2, this.y);
+        ctx.lineTo(this.x + this.width, this.y + this.height / 2);
+        ctx.lineTo(this.x + this.width / 2, this.y + this.height);
+        ctx.lineTo(this.x, this.y + this.height / 2);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+      }
+
+      update() {
+        // Move downward
+        this.y += this.speed;
+        // Sideways oscillate movement
+        this.x += this.direction * 1.5;
+        if (this.x > this.startX + this.moveRange || this.x < this.startX - this.moveRange) {
+          this.direction *= -1;
+        }
+      }
+
+      offscreen() {
+        return this.y > HEIGHT;
+      }
+    }
+
+    // Initialize game objects for start or restart
+    function initGame() {
+      spaceship = new Spaceship();
+      bullets = [];
+      enemies = [];
+      score = 0;
+      enemySpawnTimer = 0;
+      gameRunning = true;
+      scoreElement.textContent = 'Score: 0';
+      gameOverElement.style.display = 'none';
+      restartBtn.style.display = 'none';
+      loop();
+    }
+
+    // Handle keyboard input
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === ' ') {
+        e.preventDefault();
+      }
+      keys[e.key] = true;
+
+      // Restart game on Enter key if game is over
+      if (e.key === 'Enter' && !gameRunning) {
+        initGame();
+      }
+    });
+
+    window.addEventListener('keyup', (e) => {
+      keys[e.key] = false;
+    });
+
+    // Shooting control with spacebar with cooldown
+    let lastShotTime = 0;
+    const shotCooldown = 300; // milliseconds between shots
+
+    function shootIfPossible() {
+      const now = Date.now();
+      if (keys[' '] && now - lastShotTime > shotCooldown) {
+        spaceship.shoot();
+        lastShotTime = now;
+      }
+    }
+
+    // Collision detection (circle-rectangle)
+    function hitTestCircleRect(cx, cy, radius, rx, ry, rw, rh) {
+      // Find closest point to the circle within the rectangle
+      let closestX = Math.max(rx, Math.min(cx, rx + rw));
+      let closestY = Math.max(ry, Math.min(cy, ry + rh));
+
+      let distanceX = cx - closestX;
+      let distanceY = cy - closestY;
+      let distanceSquared = distanceX * distanceX + distanceY * distanceY;
+
+      return distanceSquared < radius * radius;
+    }
+
+    // Game loop
+    function loop() {
+      if (!gameRunning) return;
+      ctx.clearRect(0, 0, WIDTH, HEIGHT);
+
+      spaceship.update();
+      spaceship.draw();
+
+      // Spawn enemies periodically
+      enemySpawnTimer += 16.66; // approx frame duration at 60fps
+      if (enemySpawnTimer > enemySpawnInterval) {
+        enemySpawnTimer = 0;
+
+        // Spawn a few enemies at random x positions
+        const enemyCount = 1 + Math.floor(score / 20); // increase enemy count with score
+        for (let i = 0; i < enemyCount; i++) {
+          const xPos = Math.random() * (WIDTH - 40);
+          const speed = 1 + Math.random() * 1 + score / 50; // speed increments with score
+          enemies.push(new Enemy(xPos, -50, speed));
+        }
+        // Gradually increase spawn frequency
+        enemySpawnInterval = Math.max(400, enemySpawnInterval - 10);
+      }
+
+      // Update and draw bullets
+      bullets.forEach((bullet, index) => {
+        bullet.update();
+        if (bullet.offscreen()) {
+          bullets.splice(index, 1);
+        } else {
+          bullet.draw();
+        }
+      });
+
+      // Update and draw enemies
+      enemies.forEach((enemy, eIndex) => {
+        enemy.update();
+        enemy.draw();
+
+        // Check if enemy hits spaceship (game over)
+        if (
+          enemy.y + enemy.height > spaceship.y &&
+          enemy.x < spaceship.x + spaceship.width &&
+          enemy.x + enemy.width > spaceship.x
+        ) {
+          endGame();
+        }
+        // Remove enemies offscreen bottom
+        if (enemy.offscreen()) {
+          enemies.splice(eIndex, 1);
+        }
+
+        // Check for bullet hits
+        bullets.forEach((bullet, bIndex) => {
+          if (
+            hitTestCircleRect(
+              bullet.x,
+              bullet.y,
+              bullet.radius,
+              enemy.x,
+              enemy.y,
+              enemy.width,
+              enemy.height
+            )
+          ) {
+            // Enemy hit
+            enemies.splice(eIndex, 1);
+            bullets.splice(bIndex, 1);
+            score++;
+            scoreElement.textContent = 'Score: ' + score;
+          }
+        });
+      });
+
+      shootIfPossible();
+
+      requestAnimationFrame(loop);
+    }
+
+    // End the game
+    function endGame() {
+      gameRunning = false;
+      gameOverElement.style.display = 'block';
+      restartBtn.style.display = 'block';
+    }
+
+    // Restart button handler
+    restartBtn.addEventListener('click', () => {
+      initGame();
+    });
+
+    // Start the game automatically on load
+    initGame();
+  })();
+</script>
+</body>
+</html>
+
